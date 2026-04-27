@@ -1,6 +1,6 @@
 # TLDL — Too Long; Didn't Listen
 
-A small MCP server that turns a YouTube or Spotify podcast URL into a markdown transcript using the platforms' own auto-captions — no LLM transcription, no audio download. Deployable to Railway. Designed for personal use: public source, private deployment behind a bearer token.
+A small MCP server that turns a YouTube, Spotify, or Apple Podcasts URL into a markdown transcript using the platforms' own auto-captions — no LLM transcription, no audio download. Deployable to Railway. Designed for personal use: public source, private deployment behind a bearer token.
 
 > **Too Long; Didn't Listen. Your AI did.**\
 > Useful for note-taking, summaries, or just talking to Claude about a podcast you skipped.
@@ -15,6 +15,7 @@ get_transcript(url, language="en", include_timestamps=False) -> markdown
 
 - **YouTube URLs** (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/embed/`, `/live/`) — fetches manual or auto-generated captions and renders coalesced paragraphs with YAML frontmatter (title, channel, duration, language, fetched_at, etc.).
 - **Spotify episode URLs** (`open.spotify.com/episode/...`) — Spotify has no public transcript API, so the server resolves the episode title via Spotify's oEmbed endpoint, finds the same upload on YouTube via search, and fetches captions there. Works for podcasts that double-post. Spotify-exclusives return a clear error naming the best guess so you can decide whether to find an alternate source.
+- **Apple Podcasts URLs** (`podcasts.apple.com/.../id<show>?i=<episode>`) — same pattern as Spotify but via the public iTunes Lookup API to get the episode title. Apple-exclusives won't work; very old episodes (outside the most recent 200 for a show) return a clear "out of lookup window" error.
 - Optional `include_timestamps=true` adds `## [MM:SS]` section markers every 5 minutes.
 
 ## Why a proxy is required on Railway
@@ -227,7 +228,8 @@ Claude Code should call `get_transcript` and ground the summary in the returned 
 
 ## Limitations
 
-- **Spotify-exclusive content** (some Joe Rogan, Gimlet, Spotify Originals) will not work — there's no YouTube version to fall back to. Error message names the best guess so you can decide.
+- **Platform-exclusive content** won't work — for Spotify (some Joe Rogan, Gimlet, Spotify Originals) and Apple Podcasts (Apple-exclusives) there's no YouTube version to fall back to. Error message names the best guess so you can decide.
+- **Apple Podcasts lookup window** is the most recent 200 episodes per show (iTunes Lookup limit). Older episodes return an "out of lookup window" error.
 - **Caption-disabled videos** return a clear "captions disabled" error.
 - **Caption quality varies** with audio quality and accent. The server can't fix bad source captions.
 - **Long episodes (3+ hours)** can take 20–30s to render. Within Railway's healthcheck timeout, but close.
@@ -250,7 +252,9 @@ Claude Code should call `get_transcript` and ground the summary in the returned 
     ├── config.py            # env-var loader, fail-closed
     ├── markdown.py          # frontmatter + paragraph coalescing
     ├── youtube.py           # video_id parse + proxy-aware transcript fetch + yt-dlp metadata
-    ├── spotify.py           # oEmbed + ytsearch1 + rapidfuzz scoring
+    ├── resolver.py          # shared YouTube search + rapidfuzz scoring (used by Spotify + Apple)
+    ├── spotify.py           # oEmbed → resolver
+    ├── apple.py             # iTunes Lookup → resolver
     └── server.py            # FastMCP app, get_transcript tool, /healthz route
 ```
 
