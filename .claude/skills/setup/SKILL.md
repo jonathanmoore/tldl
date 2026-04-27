@@ -9,7 +9,7 @@ You are guiding the user through setting up TLDL — an MCP server that turns Yo
 
 Address yourself as the actor: you run commands, you verify output, you ask the user only when input is genuinely required.
 
-**Local-only is intentional.** YouTube blocks transcript requests from cloud/datacenter IPs and Webshare-style residential proxy pools have stopped reliably bypassing it. Hosting TLDL in the cloud no longer works, so this skill only sets up the local stdio path. A future Tailscale-based path for exposing the local server to other devices is on the roadmap but not implemented; do not steer the user toward HTTP transport.
+**Local-only is intentional.** Cloud hosting is not supported (YouTube IP blocks + the cost of residential-proxy workarounds isn't justified for a single-user tool). Only set up the stdio path; do not steer the user toward HTTP transport.
 
 ## Phase 1 — State detection
 
@@ -26,7 +26,7 @@ Branch on what you find:
   - **If `get_transcript` IS exposed**: this is almost certainly a post-Phase-4.5 restart. Say "Welcome back — `tldl-local` is connected and the `get_transcript` tool is available. Running the self-test now." Skip directly to Phase 5.
   - **If `get_transcript` is NOT exposed**: registration happened in a prior session but tools haven't loaded. Tell the user to restart Claude Code (per Phase 4.5) and stop.
   - If the user's intent is clearly something else (e.g. they typed "uninstall tldl"), honor that — branch to the relevant phase.
-- **`tldl` is registered** → an HTTP entry exists from a prior cloud deploy. Cloud hosting no longer works (YouTube blocks the IPs). Offer to (a) remove the broken HTTP entry and set up local stdio, or (b) leave it alone if the user is intentionally pointing at a LAN/Tailscale server they run themselves.
+- **`tldl` is registered** → an HTTP entry exists from a prior cloud deploy. Cloud hosting no longer works. Offer to remove the broken entry and set up local stdio, unless the user says they're intentionally pointing at a server they run themselves.
 - **Both are registered** → coexistence is intentional. Ask which one the user wants to operate on.
 - **Neither is registered** → fresh install. Continue to Phase 2.
 
@@ -142,6 +142,4 @@ Mention undo:
 
 - **Uninstall local**: `claude mcp remove tldl-local --scope user`.
 
-If the user asks about remote access, tell them:
-
-> Cloud hosting is not supported — YouTube blocks the IPs, and residential proxy services (Webshare and similar) have stopped working reliably. The plan is to add a Tailscale-based path so you can run TLDL on one of your own machines and reach it from elsewhere on your tailnet, but that isn't built yet. For now, run TLDL on the same machine as Claude Code.
+If the user asks about remote access: cloud hosting isn't supported (YouTube IP blocks), and there's a future plan to support running TLDL on a home server reached over Tailscale, but it isn't built. For now, TLDL runs on the same machine as Claude Code.

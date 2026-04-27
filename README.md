@@ -32,13 +32,9 @@ Claude Code spawns the Python server over stdio when you start a session and shu
 
 ### Why local-only
 
-YouTube aggressively blocks transcript requests from cloud-provider IPs. Residential-proxy services (Webshare and similar) used to be a workaround but have stopped working reliably — the request blocks now happen even on paid plans. Running TLDL on a cloud host (Railway, Fly, Render, etc.) is no longer a viable path, so this repo no longer ships Dockerfile / Railway config.
+YouTube blocks transcript requests from cloud/datacenter IPs, and paid residential-proxy workarounds aren't worth their monthly cost for a single-user tool. Run TLDL on a residential connection — corporate egress, datacenter IPs, and most VPNs will also get blocked.
 
-You need a residential connection. Corporate egress, datacenter IPs, and most VPNs will also get blocked.
-
-### Future: Tailscale
-
-The repo still has an HTTP transport (`TLDL_TRANSPORT=http`, bearer-token auth via FastMCP's `StaticTokenVerifier`, served by uvicorn on `$PORT`, healthcheck at `/healthz`). The intended future use is to run TLDL on one of your own machines (a NAS, a home server, a desktop that's always on) and reach it from your laptop via [Tailscale](https://tailscale.com). That setup isn't documented yet; for now, run TLDL on the same machine as Claude Code.
+> An HTTP transport with bearer-token auth ships in the repo for a future "run on a home server, reach over Tailscale" path, but it's not wired up by the setup flow yet.
 
 ### A note on Claude clients
 
@@ -48,7 +44,7 @@ The Claude.ai / Claude Desktop **Custom Connectors** UI only supports OAuth ([so
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `TLDL_TRANSPORT` | no | `stdio` (default, local) or `http` (LAN / future Tailscale use). |
+| `TLDL_TRANSPORT` | no | `stdio` (default, local) or `http` (unused today; reserved for a future home-server path). |
 | `MCP_BEARER_TOKEN` | when http | Required when `TLDL_TRANSPORT=http`. Not needed for stdio. Generate with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `LOG_LEVEL` | no | Default `INFO`. Use `DEBUG` to trace requests |
 | `PORT` | no | HTTP listen port. Default 8000. Only used in http mode. |
