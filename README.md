@@ -2,7 +2,8 @@
 
 A small MCP server that turns a YouTube or Spotify podcast URL into a markdown transcript using the platforms' own auto-captions — no LLM transcription, no audio download. Deployable to Railway. Designed for personal use: public source, private deployment behind a bearer token.
 
-> Sibling of TLDR. When you'd rather read a podcast than listen to it.
+> **Too Long; Didn't Listen. Your AI did.**\
+> Useful for note-taking, summaries, or just talking to Claude about a podcast you skipped.
 
 ## What it does
 
