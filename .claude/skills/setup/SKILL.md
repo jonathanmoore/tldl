@@ -20,7 +20,10 @@ git status
 
 Branch on what you find:
 
-- **`tldl-local` is registered** → local stdio is set up. Ask the user: "You already have a local TLDL registered. Want to (a) re-run the self-test, (b) deploy to Railway and migrate to HTTP, (c) uninstall, or (d) rotate the bearer token on a deployed instance?" Skip to the relevant phase.
+- **`tldl-local` is registered** → local stdio is set up. Check whether the `get_transcript` MCP tool is exposed in this session:
+  - **If `get_transcript` IS exposed**: this is almost certainly a post-Phase-4.5 restart. Say "Welcome back — `tldl-local` is connected and the `get_transcript` tool is available. Running the self-test now." Skip directly to Phase 5.
+  - **If `get_transcript` is NOT exposed**: registration happened in a prior session but tools haven't loaded. Tell the user to restart Claude Code (per Phase 4.5) and stop.
+  - If the user's intent is clearly something else (e.g. they typed "uninstall tldl" or "deploy to railway"), honor that — branch to the relevant phase (uninstall, deploy, token rotation).
 - **`tldl` is registered** → an HTTP entry already exists. Ask: "Looks like a deployed TLDL is already wired up. Want to (a) re-run the self-test against it, (b) rotate the bearer token, (c) switch back to local stdio for dev, or (d) uninstall?"
 - **Both are registered** → coexistence is intentional. Ask which one the user wants to operate on.
 - **Neither is registered** → fresh install. Continue to Phase 2.
@@ -79,15 +82,43 @@ Tell the user, briefly:
 
 > Claude Code spawns the Python server on demand and shuts it down when the session ends. No separate terminal, no token, no port. That's stdio mode. When `TLDL_TRANSPORT` is unset the server defaults to stdio.
 
+### Phase 4.5 — STOP and restart Claude Code
+
+**Hard stop.** Claude Code loads MCP tools at session startup. The `get_transcript` tool is *not* available in this session even though `claude mcp list` shows `tldl-local` connected — it will only appear after you restart.
+
+Tell the user, verbatim:
+
+> `tldl-local` is registered and showing connected. To actually use the `get_transcript` tool I need you to restart Claude Code:
+>
+> 1. End this session: type `/exit` or press Ctrl+D
+> 2. From this directory (`$(pwd)`), run `claude` to start a fresh session
+> 3. In the new session, say `/setup` or "continue tldl setup"
+>
+> The skill will detect `tldl-local` is already registered and pick up at the self-test. I'm stopping here — see you on the other side.
+
+**Do not proceed past this point in the current session. Do not run the self-test in this session.** Specifically:
+
+- Do NOT invoke `get_transcript` via `python -c "from tldl.server import get_transcript; ..."` or any other direct Python call. That proves the code imports — it does not prove the MCP integration works, which is the entire point of the self-test.
+- Do NOT spawn the server via `uv run python -m tldl.server` to "test it manually."
+- Do NOT register the MCP a second time, edit `~/.claude.json` directly, or invent any other workaround.
+
+The only acceptable path forward is the user restarting Claude Code. If they push back ("just test it now"), explain that any in-session test would be a false positive: it would pass even if the MCP wiring were broken, because it bypasses the wiring. Then stop and wait.
+
 ## Phase 5 — Self-test
+
+**Precondition check first.** Before doing anything, verify the `get_transcript` MCP tool is exposed in *this* session. List the MCP tools you have access to. If `get_transcript` (from the `tldl-local` server) is not in your tool list, the user is in a session that started before registration. Tell them to restart Claude Code per Phase 4.5 and stop. Do not attempt a Python fallback, do not re-register, do not invent workarounds.
+
+If the tool is exposed, continue.
 
 Load `.claude/skills/setup/test-urls.md` from this same directory for the canonical test URLs.
 
 For each URL in the file:
 
-1. Call `get_transcript` with the URL.
+1. Call the `get_transcript` MCP tool (not a Python import) with the URL.
 2. Check the returned markdown's YAML frontmatter for the expected `source:` value (and `match_confidence` where listed).
 3. Tell the user what was tested and whether it passed.
+
+If a call fails *through the MCP layer* (timeout, transport error, tool-not-found), that is a real bug — surface it. Do not retry by switching to a non-MCP invocation.
 
 If the pinned Apple URL has aged out of the iTunes lookup window (the resolver returns "out of lookup window"), say so to the user and ask for a more recent Apple Podcasts URL. Note this as a `test-urls.md` maintenance task rather than a code bug.
 
