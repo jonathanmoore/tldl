@@ -23,17 +23,19 @@ logging.basicConfig(
 )
 log = logging.getLogger("tldl")
 
-auth = StaticTokenVerifier(
-    tokens={
-        settings.bearer_token: {
-            "client_id": "owner",
-            "scopes": ["transcripts:read"],
-        }
-    },
-    required_scopes=["transcripts:read"],
-)
-
-mcp = FastMCP(name="TLDL", auth=auth)
+if settings.transport == "http":
+    auth = StaticTokenVerifier(
+        tokens={
+            settings.bearer_token: {
+                "client_id": "owner",
+                "scopes": ["transcripts:read"],
+            }
+        },
+        required_scopes=["transcripts:read"],
+    )
+    mcp = FastMCP(name="TLDL", auth=auth)
+else:
+    mcp = FastMCP(name="TLDL")
 
 
 @mcp.custom_route("/healthz", methods=["GET"])
@@ -157,6 +159,10 @@ app = mcp.http_app()
 
 
 def main() -> None:
+    if settings.transport == "stdio":
+        mcp.run()
+        return
+
     import uvicorn
 
     uvicorn.run(
