@@ -20,8 +20,8 @@ git status
 
 Branch on what you find:
 
-- **`transcripts-local` is registered** → local stdio is set up. Ask the user: "You already have a local TLDL registered. Want to (a) re-run the self-test, (b) deploy to Railway and migrate to HTTP, (c) uninstall, or (d) rotate the bearer token on a deployed instance?" Skip to the relevant phase.
-- **`transcripts` is registered** → an HTTP entry already exists. Ask: "Looks like a deployed TLDL is already wired up. Want to (a) re-run the self-test against it, (b) rotate the bearer token, (c) switch back to local stdio for dev, or (d) uninstall?"
+- **`tldl-local` is registered** → local stdio is set up. Ask the user: "You already have a local TLDL registered. Want to (a) re-run the self-test, (b) deploy to Railway and migrate to HTTP, (c) uninstall, or (d) rotate the bearer token on a deployed instance?" Skip to the relevant phase.
+- **`tldl` is registered** → an HTTP entry already exists. Ask: "Looks like a deployed TLDL is already wired up. Want to (a) re-run the self-test against it, (b) rotate the bearer token, (c) switch back to local stdio for dev, or (d) uninstall?"
 - **Both are registered** → coexistence is intentional. Ask which one the user wants to operate on.
 - **Neither is registered** → fresh install. Continue to Phase 2.
 
@@ -64,7 +64,7 @@ Confirm it completes without errors. If it fails on Python version, the user's `
 Run, from the repo root, exactly:
 
 ```
-claude mcp add --scope user transcripts-local -- uv run --directory $(pwd) python -m tldl.server
+claude mcp add --scope user tldl-local -- uv run --directory $(pwd) python -m tldl.server
 ```
 
 Use literal `$(pwd)` so the registration is repo-location-agnostic. Then:
@@ -73,7 +73,7 @@ Use literal `$(pwd)` so the registration is repo-location-agnostic. Then:
 claude mcp list
 ```
 
-Confirm `transcripts-local` shows `✓ Connected`. If it shows failed, the most common causes are: (1) `uv sync` was skipped or failed; (2) the user is running this from outside the repo so `$(pwd)` resolved to the wrong path — in that case, remove the entry (`claude mcp remove transcripts-local --scope user`) and re-run from the repo root.
+Confirm `tldl-local` shows `✓ Connected`. If it shows failed, the most common causes are: (1) `uv sync` was skipped or failed; (2) the user is running this from outside the repo so `$(pwd)` resolved to the wrong path — in that case, remove the entry (`claude mcp remove tldl-local --scope user`) and re-run from the repo root.
 
 Tell the user, briefly:
 
@@ -175,29 +175,29 @@ Expect 401 with `invalid_token` JSON — that's correct, it means auth is wired 
 Now switch the user's Claude Code from local stdio to the deployed HTTP server:
 
 ```
-claude mcp remove transcripts-local --scope user
+claude mcp remove tldl-local --scope user
 export TRANSCRIPT_MCP_TOKEN='<the bearer token from 7c>'
-claude mcp add --scope user --transport http transcripts https://<domain>/mcp --header "Authorization: Bearer ${TRANSCRIPT_MCP_TOKEN}"
+claude mcp add --scope user --transport http tldl https://<domain>/mcp --header "Authorization: Bearer ${TRANSCRIPT_MCP_TOKEN}"
 claude mcp list
 ```
 
-Confirm `transcripts` shows `✓ Connected`.
+Confirm `tldl` shows `✓ Connected`.
 
 Re-run the self-test from Phase 5 against the deployed server. **This is the single most important step** — it catches Webshare misconfiguration, which is the #1 deploy failure mode (YouTube blocking from Railway IPs). If YouTube fetches fail here but worked locally, the Webshare creds are wrong or missing.
 
-Mention to the user: the local entry was named `transcripts-local` and the deployed one is `transcripts` on purpose — they could coexist. After migration the local one is gone, but the user can always re-add it for dev work without conflict.
+Mention to the user: the local entry was named `tldl-local` and the deployed one is `tldl` on purpose — they could coexist. After migration the local one is gone, but the user can always re-add it for dev work without conflict.
 
 ## Phase 9 — Wrap up
 
 Summarize what was done:
 
-- Local stdio MCP `transcripts-local` was added/removed (whichever applies).
+- Local stdio MCP `tldl-local` was added/removed (whichever applies).
 - Repo deployed to Railway at `https://<domain>` (if applicable).
-- HTTP MCP `transcripts` registered with bearer auth (if applicable).
+- HTTP MCP `tldl` registered with bearer auth (if applicable).
 - Self-test pass/fail per platform.
 
 Mention undo and rotation:
 
-- **Uninstall local**: `claude mcp remove transcripts-local --scope user`.
-- **Uninstall deployed**: `claude mcp remove transcripts --scope user` (and delete the Railway service if you want to stop paying for it).
-- **Rotate bearer token**: Railway → Variables → update `MCP_BEARER_TOKEN` → Deploy. Then locally: `claude mcp remove transcripts --scope user` and re-run the `claude mcp add` from Phase 8 with the new token.
+- **Uninstall local**: `claude mcp remove tldl-local --scope user`.
+- **Uninstall deployed**: `claude mcp remove tldl --scope user` (and delete the Railway service if you want to stop paying for it).
+- **Rotate bearer token**: Railway → Variables → update `MCP_BEARER_TOKEN` → Deploy. Then locally: `claude mcp remove tldl --scope user` and re-run the `claude mcp add` from Phase 8 with the new token.
