@@ -3,10 +3,7 @@ from functools import cache
 from typing import Any
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.proxies import WebshareProxyConfig
 from yt_dlp import YoutubeDL
-
-from .config import settings
 
 _VIDEO_ID_RE = re.compile(
     r"(?:v=|/shorts/|/embed/|/live/|youtu\.be/)([0-9A-Za-z_-]{11})"
@@ -20,15 +17,6 @@ def extract_youtube_video_id(url: str) -> str | None:
 
 @cache
 def _ytt() -> YouTubeTranscriptApi:
-    if settings.webshare_username and settings.webshare_password:
-        kwargs: dict[str, Any] = dict(
-            proxy_username=settings.webshare_username,
-            proxy_password=settings.webshare_password,
-            retries_when_blocked=10,
-        )
-        if settings.webshare_locations:
-            kwargs["filter_ip_locations"] = list(settings.webshare_locations)
-        return YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(**kwargs))
     return YouTubeTranscriptApi()
 
 

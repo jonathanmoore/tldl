@@ -1,13 +1,15 @@
 ---
 name: setup
-description: Walk a new user through getting TLDL running locally, testing the transcript tool, optionally deploying to Railway, and migrating from local-stdio to remote-HTTP. Triggered by "/setup" or natural-language requests like "help me set this up".
+description: Walk a new user through getting TLDL running locally and testing the transcript tool. Triggered by "/setup" or natural-language requests like "help me set this up".
 ---
 
 # TLDL setup skill
 
-You are guiding the user through setting up TLDL — an MCP server that turns YouTube/Spotify/Apple Podcasts URLs into markdown transcripts. Local install uses stdio transport (no token, no port, no second terminal). Railway deployment uses HTTP transport with a bearer token.
+You are guiding the user through setting up TLDL — an MCP server that turns YouTube/Spotify/Apple Podcasts URLs into markdown transcripts. TLDL runs locally over stdio (Claude Code spawns the process; no token, no port, no second terminal).
 
-Address yourself as the actor: you run commands, you verify output, you ask the user only when input is genuinely required (a Webshare credential, a Railway domain, a yes/no branch).
+Address yourself as the actor: you run commands, you verify output, you ask the user only when input is genuinely required.
+
+**Local-only is intentional.** YouTube blocks transcript requests from cloud/datacenter IPs and Webshare-style residential proxy pools have stopped reliably bypassing it. Hosting TLDL in the cloud no longer works, so this skill only sets up the local stdio path. A future Tailscale-based path for exposing the local server to other devices is on the roadmap but not implemented; do not steer the user toward HTTP transport.
 
 ## Phase 1 — State detection
 
@@ -23,8 +25,8 @@ Branch on what you find:
 - **`tldl-local` is registered** → local stdio is set up. Check whether the `get_transcript` MCP tool is exposed in this session:
   - **If `get_transcript` IS exposed**: this is almost certainly a post-Phase-4.5 restart. Say "Welcome back — `tldl-local` is connected and the `get_transcript` tool is available. Running the self-test now." Skip directly to Phase 5.
   - **If `get_transcript` is NOT exposed**: registration happened in a prior session but tools haven't loaded. Tell the user to restart Claude Code (per Phase 4.5) and stop.
-  - If the user's intent is clearly something else (e.g. they typed "uninstall tldl" or "deploy to railway"), honor that — branch to the relevant phase (uninstall, deploy, token rotation).
-- **`tldl` is registered** → an HTTP entry already exists. Ask: "Looks like a deployed TLDL is already wired up. Want to (a) re-run the self-test against it, (b) rotate the bearer token, (c) switch back to local stdio for dev, or (d) uninstall?"
+  - If the user's intent is clearly something else (e.g. they typed "uninstall tldl"), honor that — branch to the relevant phase.
+- **`tldl` is registered** → an HTTP entry exists from a prior cloud deploy. Cloud hosting no longer works (YouTube blocks the IPs). Offer to (a) remove the broken HTTP entry and set up local stdio, or (b) leave it alone if the user is intentionally pointing at a LAN/Tailscale server they run themselves.
 - **Both are registered** → coexistence is intentional. Ask which one the user wants to operate on.
 - **Neither is registered** → fresh install. Continue to Phase 2.
 
@@ -41,13 +43,12 @@ git --version
 claude --version
 ```
 
-Required: `uv` any recent version, Python ≥ 3.12, git, claude CLI. If the deploy phase is on the table, also check `gh --version`.
+Required: `uv` any recent version, Python ≥ 3.12, git, claude CLI.
 
 If anything is missing, present a checklist with install hints:
 
 - `uv` → `brew install uv` (macOS) or see https://docs.astral.sh/uv/getting-started/installation/
 - Python 3.12+ → `brew install python@3.12` (macOS) or https://www.python.org/downloads/
-- `gh` → `brew install gh` (macOS) or https://cli.github.com/
 - `claude` → https://docs.claude.com/en/docs/claude-code
 
 Do not proceed until all required tools are present. Re-check after the user installs.
@@ -126,103 +127,21 @@ If the pinned Apple URL has aged out of the iTunes lookup window (the resolver r
 
 Diagnose failures:
 
-- **YouTube fails with IP-block / 429-ish error** → likely a non-residential IP (VPN, cloud workspace, corporate egress). Ask the user to disable VPN and retry. Locally, no Webshare proxy is needed; on Railway it is.
+- **YouTube fails with IP-block / 429-ish error** → likely a non-residential IP (VPN, cloud workspace, corporate egress). Ask the user to disable VPN and retry. There is no proxy escape hatch — TLDL only works from a residential connection.
 - **Spotify or Apple resolution fails** → resolver couldn't find a YouTube match. Try a different episode. If `match_confidence` is below 0.5 the resolver intentionally refuses; this is correct behavior, not a bug.
 - **Unsupported URL fails with a stack trace instead of `ToolError("Unsupported URL ...")`** → real bug. Surface it: file path `src/tldl/server.py`, function `get_transcript`.
 
-## Phase 6 — Branch: done, or deploy?
-
-Ask: "Local setup is working. Want to stop here, or deploy to Railway?"
-
-If "done": remind the user they can re-run `/setup` later for deployment, rotation, or to uninstall. End cleanly.
-
-If "deploy": continue to Phase 7.
-
-## Phase 7 — Deploy to Railway
-
-### 7a. Push to GitHub (if needed)
-
-Check `git remote -v`. If no GitHub remote:
-
-```
-gh repo create tldl --public --source=. --push
-```
-
-**Confirm with the user before running this** — the repo will be public. (Secrets stay in Railway env vars, never in git, so public is fine for this project, but the user should know.)
-
-### 7b. Hand over EVERYTHING the user needs in ONE message
-
-**Critical:** the user is about to leave the terminal and click around in the Railway dashboard. They will not come back between clicks. If you split this into "tell me when the build starts and I'll send the token" you will leave them stranded with a half-deployed service. Generate the token now and bundle it with the dashboard steps + env block + domain step in a single message.
-
-Generate a fresh bearer token first:
-
-```
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Then send the user one self-contained block covering all of:
-
-1. **Create the project**: https://railway.com/dashboard → **New Project** → **Deploy from GitHub repo** → authorize the Railway GitHub app on the repo if prompted → select the repo. Railway detects the Dockerfile and starts a build.
-2. **Open Variables → RAW Editor** on the service tile and paste:
-   ```
-   TLDL_TRANSPORT=http
-   MCP_BEARER_TOKEN=<the token you just generated>
-   WEBSHARE_PROXY_USERNAME=<from webshare.io>
-   WEBSHARE_PROXY_PASSWORD=<from webshare.io>
-   WEBSHARE_PROXY_LOCATIONS=us
-   ```
-   Without `MCP_BEARER_TOKEN` the container exits on startup with `MCP_BEARER_TOKEN must be set when TLDL_TRANSPORT=http` and the healthcheck fails — so this must be set before the first deploy completes, not after.
-3. **Generate a public domain**: Settings → **Networking** → **Public Networking** → **Generate Domain**. The service has no inbound URL until this is clicked. Ask the user to paste the resulting domain (e.g. `tldl-production.up.railway.app`).
-4. Tell the user to save the bearer token somewhere — they'll need it again in Phase 8 for `claude mcp add`.
-
-Notes for the user (include these in the same message):
-- `TLDL_TRANSPORT=http` is also set in the Dockerfile, so it's redundant — but explicit-is-better-than-implicit, and future-proofs against the Dockerfile changing.
-- Webshare credentials are the *proxy* username/password (not the account email). Without them YouTube blocks requests from Railway IPs. If the user doesn't have a Webshare account, point them at https://www.webshare.io — the smallest plan (~$1/GB) is fine since transcripts are tiny.
-
-### 7c. Verify deploy
-
-```
-curl https://<domain>/healthz
-```
-
-Expect `ok`. If it doesn't return ok, check Railway's Deploy Logs for `Application startup complete.`
-
-Auth check (optional):
-
-```
-curl -X POST https://<domain>/mcp
-```
-
-Expect 401 with `invalid_token` JSON — that's correct, it means auth is wired up.
-
-## Phase 8 — Migration: stdio → HTTP
-
-Now switch the user's Claude Code from local stdio to the deployed HTTP server:
-
-```
-claude mcp remove tldl-local --scope user
-export TRANSCRIPT_MCP_TOKEN='<the bearer token from 7c>'
-claude mcp add --scope user --transport http tldl https://<domain>/mcp --header "Authorization: Bearer ${TRANSCRIPT_MCP_TOKEN}"
-claude mcp list
-```
-
-Confirm `tldl` shows `✓ Connected`.
-
-Re-run the self-test from Phase 5 against the deployed server. **This is the single most important step** — it catches Webshare misconfiguration, which is the #1 deploy failure mode (YouTube blocking from Railway IPs). If YouTube fetches fail here but worked locally, the Webshare creds are wrong or missing.
-
-Mention to the user: the local entry was named `tldl-local` and the deployed one is `tldl` on purpose — they could coexist. After migration the local one is gone, but the user can always re-add it for dev work without conflict.
-
-## Phase 9 — Wrap up
+## Phase 6 — Wrap up
 
 Summarize what was done:
 
-- Local stdio MCP `tldl-local` was added/removed (whichever applies).
-- Repo deployed to Railway at `https://<domain>` (if applicable).
-- HTTP MCP `tldl` registered with bearer auth (if applicable).
+- Local stdio MCP `tldl-local` was added (or removed, if the user was uninstalling).
 - Self-test pass/fail per platform.
 
-Mention undo and rotation:
+Mention undo:
 
 - **Uninstall local**: `claude mcp remove tldl-local --scope user`.
-- **Uninstall deployed**: `claude mcp remove tldl --scope user` (and delete the Railway service if you want to stop paying for it).
-- **Rotate bearer token**: Railway → Variables → update `MCP_BEARER_TOKEN` → Deploy. Then locally: `claude mcp remove tldl --scope user` and re-run the `claude mcp add` from Phase 8 with the new token.
+
+If the user asks about remote access, tell them:
+
+> Cloud hosting is not supported — YouTube blocks the IPs, and residential proxy services (Webshare and similar) have stopped working reliably. The plan is to add a Tailscale-based path so you can run TLDL on one of your own machines and reach it from elsewhere on your tailnet, but that isn't built yet. For now, run TLDL on the same machine as Claude Code.

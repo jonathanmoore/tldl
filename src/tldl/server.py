@@ -72,8 +72,10 @@ def _friendly_error(e: Exception) -> str:
         return "Video is unavailable (private, deleted, or region-locked)."
     if isinstance(e, (IpBlocked, RequestBlocked)):
         return (
-            "YouTube blocked the request. The server's outbound IP is rate-limited; "
-            "configure WEBSHARE_PROXY_USERNAME and WEBSHARE_PROXY_PASSWORD."
+            "YouTube blocked the request. This usually means a non-residential "
+            "IP (VPN, corporate egress, or cloud/datacenter host). Run TLDL "
+            "from a residential connection — cloud-hosted deploys are not "
+            "supported because YouTube blocks them."
         )
     return f"{type(e).__name__}: {e}"
 
@@ -156,8 +158,9 @@ def get_transcript(
         raise ToolError(_friendly_error(e)) from e
 
 
-# Module-scope so the Dockerfile's `uvicorn tldl.server:app` import works.
-# Constructed in stdio mode too, but never served.
+# Module-scope so `uvicorn tldl.server:app` works for the http transport
+# (intended for future LAN/Tailscale exposure). Constructed in stdio mode too,
+# but never served.
 app = mcp.http_app()
 
 
