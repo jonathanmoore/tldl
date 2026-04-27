@@ -7,16 +7,38 @@ A small MCP server that turns a YouTube, Spotify, or Apple Podcasts URL into a m
 
 ## What it does
 
-One MCP tool:
+Three MCP tools:
 
 ```
 get_transcript(url, language="en", include_timestamps=False) -> markdown
+get_episode_info(url) -> markdown
+list_recent_episodes(url, limit=10) -> markdown
 ```
+
+### `get_transcript` — full transcript
 
 - **YouTube URLs** (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/embed/`, `/live/`) — fetches manual or auto-generated captions and renders coalesced paragraphs with YAML frontmatter (title, channel, duration, language, fetched_at, etc.).
 - **Spotify episode URLs** (`open.spotify.com/episode/...`) — Spotify has no public transcript API, so the server resolves the episode title via Spotify's oEmbed endpoint, finds the same upload on YouTube via search, and fetches captions there. Works for podcasts that double-post. Spotify-exclusives return a clear error naming the best guess so you can decide whether to find an alternate source.
 - **Apple Podcasts URLs** (`podcasts.apple.com/.../id<show>?i=<episode>`) — same pattern as Spotify but via the public iTunes Lookup API to get the episode title. Apple-exclusives won't work; very old episodes (outside the most recent 200 for a show) return a clear "out of lookup window" error.
 - Optional `include_timestamps=true` adds `## [MM:SS]` section markers every 5 minutes.
+
+### `get_episode_info` — metadata only, no transcript
+
+Returns YAML frontmatter (title, show/channel, duration, release date, etc.) and a brief description body when one is available. Useful when you want to confirm "is this the right episode?" or just reference an episode in conversation without spending tokens on a full transcript.
+
+- **YouTube** — full metadata via yt-dlp (title, channel, duration, upload date, description).
+- **Apple** — full metadata via iTunes Lookup (title, show, duration, release date, description, audio URL).
+- **Spotify** — limited metadata via oEmbed (title and show only — Spotify does not expose duration or release date publicly without authenticated API access).
+
+### `list_recent_episodes` — discovery
+
+Returns a numbered markdown list of recent episodes/videos with titles, dates, and durations.
+
+- **Apple Podcasts show URL** (`podcasts.apple.com/.../id<show>` without `?i=`) — recent episodes via iTunes Lookup. If you pass an episode URL, the `?i=` is ignored and the show is listed.
+- **YouTube channel URL** (`youtube.com/@name`, `/channel/...`, `/c/...`, `/user/...`) or **playlist URL** (`youtube.com/playlist?list=...`) — recent videos via yt-dlp. Bare channel URLs are auto-resolved to the `/videos` tab.
+- **Spotify show URLs are not supported** — Spotify has no public episodes API. Returns a clear error message; try the same show on Apple Podcasts or YouTube.
+
+`limit` is capped at 50.
 
 ## Why a proxy is required on Railway
 
@@ -250,12 +272,12 @@ Claude Code should call `get_transcript` and ground the summary in the returned 
 └── src/tldl/
     ├── __init__.py
     ├── config.py            # env-var loader, fail-closed
-    ├── markdown.py          # frontmatter + paragraph coalescing
-    ├── youtube.py           # video_id parse + proxy-aware transcript fetch + yt-dlp metadata
+    ├── markdown.py          # frontmatter + paragraph coalescing + episode-info / list formatters
+    ├── youtube.py           # video_id parse + proxy-aware transcript fetch + yt-dlp metadata + channel listing
     ├── resolver.py          # shared YouTube search + rapidfuzz scoring (used by Spotify + Apple)
-    ├── spotify.py           # oEmbed → resolver
-    ├── apple.py             # iTunes Lookup → resolver
-    └── server.py            # FastMCP app, get_transcript tool, /healthz route
+    ├── spotify.py           # oEmbed → resolver / episode-info
+    ├── apple.py             # iTunes Lookup → resolver / episode-info / show-listing
+    └── server.py            # FastMCP app: get_transcript + get_episode_info + list_recent_episodes + /healthz
 ```
 
 ## Credits

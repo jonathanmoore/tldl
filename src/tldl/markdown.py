@@ -50,6 +50,98 @@ def _frontmatter(fields: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def render_episode_info(info: dict[str, Any], source: str) -> str:
+    """
+    Format an episode-info dict as markdown frontmatter + a brief description body.
+    `source` is the platform key ("youtube" / "spotify" / "apple").
+    """
+    duration_s = info.get("duration") or 0
+    use_hours = duration_s >= 3600
+    duration_str = _fmt_ts(duration_s, force_hours=use_hours) if duration_s else None
+    upload = info.get("upload_date")
+    if upload and len(upload) == 8 and upload.isdigit():
+        upload = f"{upload[0:4]}-{upload[4:6]}-{upload[6:8]}"
+
+    fm: dict[str, Any] = {
+        "title": info.get("title"),
+        "channel": info.get("channel"),
+        "show": info.get("show"),
+        "source": source,
+        "source_url": info.get("source_url") or info.get("webpage_url"),
+        "duration": duration_str,
+        "release_date": info.get("release_date") or upload,
+        "video_id": info.get("video_id"),
+        "show_id": info.get("show_id"),
+        "track_id": info.get("track_id"),
+        "audio_url": info.get("audio_url"),
+        "fetched_at": _now_iso(),
+    }
+
+    parts = [_frontmatter(fm)]
+    title = info.get("title") or "Episode info"
+    parts.append(f"# {title}")
+
+    description = info.get("description")
+    if description:
+        parts.append(description)
+
+    return "\n\n".join(parts) + "\n"
+
+
+def render_episode_list(payload: dict[str, Any], source: str) -> str:
+    """
+    Format a list of recent episodes as markdown frontmatter + numbered list.
+    `payload` shape:
+      {"show" or "channel": str, "source_url": str, "episodes" or "videos": [...]}
+    `source` is "apple" / "youtube".
+    """
+    items_key = "videos" if source == "youtube" else "episodes"
+    items: list[dict[str, Any]] = payload.get(items_key) or []
+    name_key = "channel" if source == "youtube" else "show"
+
+    fm: dict[str, Any] = {
+        name_key: payload.get(name_key),
+        "source": source,
+        "source_url": payload.get("source_url"),
+        "count": len(items),
+        "fetched_at": _now_iso(),
+    }
+    if "show_id" in payload:
+        fm["show_id"] = payload.get("show_id")
+
+    parts = [_frontmatter(fm)]
+    heading_name = payload.get(name_key) or "this " + ("channel" if source == "youtube" else "show")
+    parts.append(f"# Recent from {heading_name}")
+
+    body_lines: list[str] = []
+    for i, item in enumerate(items, 1):
+        title = item.get("title") or "(untitled)"
+        url = item.get("url") or item.get("episode_url") or ""
+        meta_bits: list[str] = []
+        date = item.get("upload_date") or item.get("release_date")
+        if date and len(str(date)) == 8 and str(date).isdigit():
+            date = f"{date[0:4]}-{date[4:6]}-{date[6:8]}"
+        if date:
+            meta_bits.append(str(date))
+        duration_s = item.get("duration") or 0
+        if duration_s:
+            meta_bits.append(_fmt_ts(int(duration_s), force_hours=int(duration_s) >= 3600))
+        meta = " — ".join(meta_bits)
+        line = f"{i}. **{title}**"
+        if url:
+            line = f"{i}. **[{title}]({url})**"
+        if meta:
+            line += f" — {meta}"
+        body_lines.append(line)
+
+    parts.append("\n".join(body_lines))
+    return "\n\n".join(parts) + "\n"
+
+
 def _coalesce_paragraphs(snippets: list[Any]) -> list[tuple[float, str]]:
     """
     Group raw caption snippets into (paragraph_start_seconds, paragraph_text) tuples.
