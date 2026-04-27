@@ -54,7 +54,59 @@ def fetch_youtube_metadata(video_id: str) -> dict[str, Any]:
         "channel": info.get("channel") or info.get("uploader"),
         "duration": info.get("duration"),
         "upload_date": info.get("upload_date"),
+        "description": (info.get("description") or "").strip() or None,
         "webpage_url": info.get("webpage_url")
         or f"https://www.youtube.com/watch?v={video_id}",
         "video_id": video_id,
+    }
+
+
+_BARE_CHANNEL_RE = re.compile(
+    r"^(https?://(?:www\.)?youtube\.com/(?:@[^/?#]+|channel/[^/?#]+|c/[^/?#]+|user/[^/?#]+))/?$"
+)
+
+
+def list_youtube_videos(channel_url: str, limit: int) -> dict[str, Any]:
+    """
+    List recent videos from a YouTube channel or playlist URL.
+    Returns {"channel", "source_url", "videos": [{...}, ...]}.
+
+    Uses extract_flat so we don't pay per-video metadata cost.
+    """
+    # Bare channel URLs (no /videos, /streams, /shorts) yield sub-tabs as
+    # results instead of videos. Append /videos for the conventional case.
+    bare = _BARE_CHANNEL_RE.match(channel_url)
+    fetch_url = f"{bare.group(1)}/videos" if bare else channel_url
+
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "playlistend": limit,
+    }
+    with YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(fetch_url, download=False)
+
+    entries = info.get("entries") or []
+    videos: list[dict[str, Any]] = []
+    for e in entries[:limit]:
+        vid = e.get("id")
+        videos.append(
+            {
+                "title": e.get("title"),
+                "video_id": vid,
+                "url": e.get("webpage_url")
+                or e.get("url")
+                or (f"https://www.youtube.com/watch?v={vid}" if vid else None),
+                "duration": e.get("duration"),
+                "upload_date": e.get("upload_date"),
+                "channel": e.get("channel") or e.get("uploader"),
+            }
+        )
+
+    return {
+        "channel": info.get("channel") or info.get("uploader") or info.get("title"),
+        "source_url": info.get("webpage_url") or channel_url,
+        "videos": videos,
     }

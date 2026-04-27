@@ -48,3 +48,17 @@ def resolve_spotify_to_youtube(
     """
     info = _oembed(spotify_url)
     return find_youtube_match(info["title"], info["show"])
+
+
+def fetch_spotify_episode_info(spotify_url: str) -> dict[str, Any]:
+    """
+    Returns the normalized info we can extract from Spotify's oEmbed endpoint.
+    Spotify exposes much less than YouTube/Apple — title and show name are all
+    we get reliably without authenticated API access.
+    """
+    info = _oembed(spotify_url)
+    return {
+        "title": info["title"],
+        "show": info["show"],
+        "source_url": spotify_url,
+    }

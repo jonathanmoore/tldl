@@ -1,4 +1,5 @@
 import logging
+import re
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -6,15 +7,20 @@ from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
-from .apple import resolve_apple_to_youtube
+from .apple import (
+    fetch_apple_episode_info,
+    list_apple_episodes,
+    resolve_apple_to_youtube,
+)
 from .config import settings
-from .markdown import render_markdown
+from .markdown import render_episode_info, render_episode_list, render_markdown
 from .resolver import ResolutionError
-from .spotify import resolve_spotify_to_youtube
+from .spotify import fetch_spotify_episode_info, resolve_spotify_to_youtube
 from .youtube import (
     extract_youtube_video_id,
     fetch_youtube_metadata,
     fetch_youtube_transcript,
+    list_youtube_videos,
 )
 
 logging.basicConfig(
@@ -50,6 +56,19 @@ def _detect(url: str) -> str:
     if "podcasts.apple.com" in u:
         return "apple"
     return "unknown"
+
+
+_YOUTUBE_LISTABLE_RE = re.compile(
+    r"youtube\.com/(?:@[^/?#]+|channel/[^/?#]+|c/[^/?#]+|user/[^/?#]+|playlist\?)"
+)
+
+
+def _is_youtube_video_url(url: str) -> bool:
+    return extract_youtube_video_id(url) is not None
+
+
+def _is_apple_episode_url(url: str) -> bool:
+    return bool(re.search(r"[?&]i=\d+", url))
 
 
 def _friendly_error(e: Exception) -> str:
@@ -150,6 +169,121 @@ def get_transcript(
         raise ToolError(str(e)) from e
     except Exception as e:
         log.exception("get_transcript failed for %s", url)
+        raise ToolError(_friendly_error(e)) from e
+
+
+@mcp.tool
+def get_episode_info(url: str) -> str:
+    """
+    Fetch metadata for an episode without pulling the transcript. Useful when
+    you want to confirm "is this the right episode?" without paying the tokens
+    for a full transcript, or when you just want to reference an episode.
+
+    Returns markdown with YAML frontmatter (title, show/channel, duration,
+    release date, etc.) and a brief description body when one is available.
+
+    - YouTube: full metadata via yt-dlp (title, channel, duration, upload
+      date, description).
+    - Apple Podcasts: full metadata via the iTunes Lookup API (title, show,
+      duration, release date, description, audio_url).
+    - Spotify: limited metadata via oEmbed (title, show only — Spotify does
+      not expose duration or release date publicly).
+
+    Args:
+        url: A YouTube video URL, Spotify episode URL, or Apple Podcasts
+             episode URL (must include ?i= for Apple).
+    """
+    log.info("get_episode_info url=%s", url)
+    kind = _detect(url)
+    try:
+        if kind == "youtube":
+            video_id = extract_youtube_video_id(url)
+            if not video_id:
+                raise ToolError(
+                    f"That YouTube URL looks like a channel/playlist, not a video. "
+                    f"Use list_recent_episodes for channels: {url}"
+                )
+            info = fetch_youtube_metadata(video_id)
+            info["source_url"] = info.get("webpage_url") or url
+            return render_episode_info(info, source="youtube")
+
+        if kind == "spotify":
+            info = fetch_spotify_episode_info(url)
+            return render_episode_info(info, source="spotify")
+
+        if kind == "apple":
+            if not _is_apple_episode_url(url):
+                raise ToolError(
+                    "That Apple Podcasts URL is for a show, not an episode. "
+                    "Use list_recent_episodes to see recent episodes."
+                )
+            info = fetch_apple_episode_info(url)
+            return render_episode_info(info, source="apple")
+
+        raise ToolError(
+            f"Unsupported URL (need a YouTube, Spotify, or Apple Podcasts episode URL): {url}"
+        )
+
+    except ToolError:
+        raise
+    except ResolutionError as e:
+        raise ToolError(str(e)) from e
+    except Exception as e:
+        log.exception("get_episode_info failed for %s", url)
+        raise ToolError(_friendly_error(e)) from e
+
+
+@mcp.tool
+def list_recent_episodes(url: str, limit: int = 10) -> str:
+    """
+    List recent episodes/videos from a podcast show or YouTube channel URL.
+
+    - Apple Podcasts show URL (`podcasts.apple.com/.../id<show>`): up to 200
+      most recent episodes via iTunes Lookup. If you pass an Apple episode
+      URL, the `?i=` is ignored and the show's episodes are listed.
+    - YouTube channel URL (`youtube.com/@name`, `/channel/...`, `/c/...`,
+      `/user/...`) or playlist URL (`youtube.com/playlist?list=...`): recent
+      videos via yt-dlp.
+    - Spotify show URLs are not supported (no public episodes API).
+
+    Args:
+        url: An Apple Podcasts show URL, a YouTube channel/playlist URL,
+             (or an Apple episode URL — the show portion is used).
+        limit: Number of episodes to return. Capped at 50.
+    """
+    log.info("list_recent_episodes url=%s limit=%s", url, limit)
+    limit = max(1, min(int(limit), 50))
+    if "open.spotify.com" in url.lower():
+        raise ToolError(
+            "Spotify show listings are not supported (Spotify has no public "
+            "episodes API). Try the same show on Apple Podcasts or YouTube."
+        )
+    kind = _detect(url)
+    try:
+        if kind == "apple":
+            payload = list_apple_episodes(url, limit=limit)
+            return render_episode_list(payload, source="apple")
+
+        if kind == "youtube":
+            if _is_youtube_video_url(url) and not _YOUTUBE_LISTABLE_RE.search(url):
+                raise ToolError(
+                    "That looks like a single video URL. Pass a channel URL "
+                    "(e.g. https://www.youtube.com/@channelname) or a playlist URL."
+                )
+            payload = list_youtube_videos(url, limit=limit)
+            return render_episode_list(payload, source="youtube")
+
+        raise ToolError(
+            f"Unsupported URL (need an Apple Podcasts show URL or a YouTube "
+            f"channel/playlist URL): {url}"
+        )
+
+    except ToolError:
+        raise
+    except ResolutionError as e:
+        raise ToolError(str(e)) from e
+    except Exception as e:
+        log.exception("list_recent_episodes failed for %s", url)
         raise ToolError(_friendly_error(e)) from e
 
 
