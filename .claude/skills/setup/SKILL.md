@@ -86,12 +86,14 @@ Tell the user, briefly:
 
 **Hard stop.** Claude Code loads MCP tools at session startup. The `get_transcript` tool is *not* available in this session even though `claude mcp list` shows `tldl-local` connected — it will only appear after you restart.
 
-Tell the user, verbatim:
+Resolve the actual repo path first (run `pwd` if you don't already have it from Phase 1) and substitute it into the message below before speaking — the user should see their real path, not a literal `$(pwd)`.
+
+Tell the user (substituting `<REPO_PATH>` with the resolved absolute path):
 
 > `tldl-local` is registered and showing connected. To actually use the `get_transcript` tool I need you to restart Claude Code:
 >
 > 1. End this session: type `/exit` or press Ctrl+D
-> 2. From this directory (`$(pwd)`), run `claude` to start a fresh session
+> 2. From `<REPO_PATH>`, run `claude` to start a fresh session
 > 3. In the new session, say `/setup` or "continue tldl setup"
 >
 > The skill will detect `tldl-local` is already registered and pick up at the self-test. I'm stopping here — see you on the other side.
@@ -110,7 +112,7 @@ The only acceptable path forward is the user restarting Claude Code. If they pus
 
 If the tool is exposed, continue.
 
-Load `.claude/skills/setup/test-urls.md` from this same directory for the canonical test URLs.
+Load `.claude/skills/setup/test-urls.md` from this same directory for the canonical test URLs. Read the file end-to-end, including the stability caveat at the bottom — if the Apple URL has aged out of the iTunes lookup window, treat that as a `test-urls.md` maintenance task (ask the user for a more recent Apple Podcasts URL), not a code bug.
 
 For each URL in the file:
 

@@ -24,6 +24,7 @@ logging.basicConfig(
 log = logging.getLogger("tldl")
 
 if settings.transport == "http":
+    assert settings.bearer_token is not None  # guaranteed by config.load_settings
     auth = StaticTokenVerifier(
         tokens={
             settings.bearer_token: {
@@ -155,6 +156,8 @@ def get_transcript(
         raise ToolError(_friendly_error(e)) from e
 
 
+# Module-scope so the Dockerfile's `uvicorn tldl.server:app` import works.
+# Constructed in stdio mode too, but never served.
 app = mcp.http_app()
 
 
