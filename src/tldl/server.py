@@ -6,9 +6,11 @@ from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 
+from .apple import resolve_apple_to_youtube
 from .config import settings
 from .markdown import render_markdown
-from .spotify import SpotifyResolutionError, resolve_spotify_to_youtube
+from .resolver import ResolutionError
+from .spotify import resolve_spotify_to_youtube
 from .youtube import (
     extract_youtube_video_id,
     fetch_youtube_metadata,
@@ -45,6 +47,8 @@ def _detect(url: str) -> str:
         return "youtube"
     if "open.spotify.com" in u and "/episode/" in u:
         return "spotify"
+    if "podcasts.apple.com" in u:
+        return "apple"
     return "unknown"
 
 
@@ -78,15 +82,17 @@ def get_transcript(
     include_timestamps: bool = False,
 ) -> str:
     """
-    Fetch the auto-caption transcript for a YouTube or Spotify podcast URL
-    and return it as Markdown with YAML frontmatter.
+    Fetch the auto-caption transcript for a podcast URL and return it as
+    Markdown with YAML frontmatter.
 
     - YouTube: uses the video's manual or auto-generated captions.
-    - Spotify: resolves the episode to the same upload on YouTube via oEmbed +
-      YouTube search. Spotify-exclusive episodes are not supported.
+    - Spotify: resolves the episode to the same upload on YouTube via oEmbed
+      + YouTube search. Spotify-exclusive episodes are not supported.
+    - Apple Podcasts: resolves the episode via the iTunes Lookup API and
+      then matches it on YouTube. Apple-exclusive episodes are not supported.
 
     Args:
-        url: YouTube watch/shorts/youtu.be URL or Spotify episode URL.
+        url: YouTube, Spotify episode, or Apple Podcasts episode URL.
         language: ISO language code for captions (default "en").
         include_timestamps: If true, insert section markers every 5 minutes.
     """
@@ -107,7 +113,7 @@ def get_transcript(
             )
 
         if kind == "spotify":
-            video_id, metadata, match = resolve_spotify_to_youtube(url, language=language)
+            video_id, metadata, match = resolve_spotify_to_youtube(url)
             transcript = fetch_youtube_transcript(video_id, language)
             return render_markdown(
                 transcript,
@@ -120,13 +126,27 @@ def get_transcript(
                 include_timestamps=include_timestamps,
             )
 
+        if kind == "apple":
+            video_id, metadata, match = resolve_apple_to_youtube(url)
+            transcript = fetch_youtube_transcript(video_id, language)
+            return render_markdown(
+                transcript,
+                metadata,
+                source={
+                    "kind": "apple-via-youtube",
+                    "original_url": url,
+                    "match": match,
+                },
+                include_timestamps=include_timestamps,
+            )
+
         raise ToolError(
-            f"Unsupported URL (need a YouTube video or Spotify episode): {url}"
+            f"Unsupported URL (need a YouTube, Spotify, or Apple Podcasts URL): {url}"
         )
 
     except ToolError:
         raise
-    except SpotifyResolutionError as e:
+    except ResolutionError as e:
         raise ToolError(str(e)) from e
     except Exception as e:
         log.exception("get_transcript failed for %s", url)
