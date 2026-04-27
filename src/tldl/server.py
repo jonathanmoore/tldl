@@ -23,17 +23,20 @@ logging.basicConfig(
 )
 log = logging.getLogger("tldl")
 
-auth = StaticTokenVerifier(
-    tokens={
-        settings.bearer_token: {
-            "client_id": "owner",
-            "scopes": ["transcripts:read"],
-        }
-    },
-    required_scopes=["transcripts:read"],
-)
-
-mcp = FastMCP(name="TLDL", auth=auth)
+if settings.transport == "http":
+    assert settings.bearer_token is not None  # guaranteed by config.load_settings
+    auth = StaticTokenVerifier(
+        tokens={
+            settings.bearer_token: {
+                "client_id": "owner",
+                "scopes": ["transcripts:read"],
+            }
+        },
+        required_scopes=["transcripts:read"],
+    )
+    mcp = FastMCP(name="TLDL", auth=auth)
+else:
+    mcp = FastMCP(name="TLDL")
 
 
 @mcp.custom_route("/healthz", methods=["GET"])
@@ -153,10 +156,16 @@ def get_transcript(
         raise ToolError(_friendly_error(e)) from e
 
 
+# Module-scope so the Dockerfile's `uvicorn tldl.server:app` import works.
+# Constructed in stdio mode too, but never served.
 app = mcp.http_app()
 
 
 def main() -> None:
+    if settings.transport == "stdio":
+        mcp.run()
+        return
+
     import uvicorn
 
     uvicorn.run(

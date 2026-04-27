@@ -1,9 +1,17 @@
 # TLDL — Too Long; Didn't Listen
 
-A small MCP server that turns a YouTube, Spotify, or Apple Podcasts URL into a markdown transcript using the platforms' own auto-captions — no LLM transcription, no audio download. Deployable to Railway. Designed for personal use: public source, private deployment behind a bearer token.
+A small MCP server that turns a YouTube, Spotify, or Apple Podcasts URL into a markdown transcript using the platforms' own auto-captions — no LLM transcription, no audio download. Runs locally over stdio or self-hosted over HTTP (Railway-ready). Public source, private deployment behind a bearer token.
 
 > **Too Long; Didn't Listen. Your AI did.**\
 > Useful for note-taking, summaries, or just talking to Claude about a podcast you skipped.
+
+## Quickstart
+
+Open this repo in [Claude Code](https://claude.com/claude-code) and say:
+
+> help me get this set up
+
+Or run `/setup`. The setup skill walks you through local install → testing → optional Railway deployment → migration. It uses stdio for local (no token, no second terminal) and HTTP for Railway.
 
 ## What it does
 
@@ -18,208 +26,29 @@ get_transcript(url, language="en", include_timestamps=False) -> markdown
 - **Apple Podcasts URLs** (`podcasts.apple.com/.../id<show>?i=<episode>`) — same pattern as Spotify but via the public iTunes Lookup API to get the episode title. Apple-exclusives won't work; very old episodes (outside the most recent 200 for a show) return a clear "out of lookup window" error.
 - Optional `include_timestamps=true` adds `## [MM:SS]` section markers every 5 minutes.
 
-## Why a proxy is required on Railway
+## How it works
+
+The server picks one of two transports based on `TLDL_TRANSPORT`:
+
+- **`stdio`** (default, local dev) — Claude Code spawns the process directly. No bearer token, no port, no second terminal. The process boundary is the trust boundary.
+- **`http`** (Railway, anything self-hosted) — uvicorn on `$PORT`, MCP at `/mcp`, healthcheck at `/healthz`, bearer-token auth via FastMCP's `StaticTokenVerifier`. The Dockerfile pins this mode so production never falls back to stdio.
+
+Both transports expose the same single tool. The setup skill picks the right one for you.
+
+### Why a proxy is required on Railway
 
 YouTube aggressively blocks transcript requests from cloud-provider IPs. On a residential connection it works without a proxy; on Railway it will fail without one. The server has built-in support for [Webshare](https://www.webshare.io) residential proxies (cheap, ~$1/GB; transcripts are tiny so even the smallest plan lasts forever). Set the proxy env vars below and the underlying library handles rotation.
 
-## Try it locally
+### A note on Claude clients
 
-Recommended: get it working on `localhost` first, then deploy. From a residential connection you don't need Webshare — direct YouTube requests work.
-
-### 1. Install and start the server
-
-```bash
-# Clone, install deps
-git clone https://github.com/<you>/<repo> tldl
-cd tldl
-uv sync
-
-# Generate and export a bearer token
-export MCP_BEARER_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-echo "$MCP_BEARER_TOKEN"   # save this — you'll paste it in step 2
-
-# Run the server (binds to 0.0.0.0:8000)
-uv run python -m tldl.server
-```
-
-You should see `Uvicorn running on http://0.0.0.0:8000`. The MCP endpoint is `http://localhost:8000/mcp`; the healthcheck is `http://localhost:8000/healthz` (returns `ok`). Leave this terminal running.
-
-### 2. Register the local server with Claude Code
-
-In a **second terminal**:
-
-```bash
-export TRANSCRIPT_MCP_TOKEN='<paste the token from step 1>'
-
-claude mcp add --scope user --transport http transcripts-local \
-  http://localhost:8000/mcp \
-  --header "Authorization: Bearer ${TRANSCRIPT_MCP_TOKEN}"
-
-claude mcp list
-```
-
-`transcripts-local` should appear with `✓ Connected`.
-
-### 3. Test it from a Claude session
-
-```bash
-claude
-```
-
-Try these prompts in order — watch the first terminal for `get_transcript url=...` log lines:
-
-**Golden path — short YouTube video:**
-> Use the get_transcript tool to fetch https://www.youtube.com/watch?v=jNQXAC9IVRw and return the markdown verbatim.
-
-**Real podcast (long captions, exercises the paragraph coalescer):**
-> Use get_transcript on https://www.youtube.com/watch?v=RaKFP_DuqpA and summarize the three biggest ideas.
-
-**Spotify resolves to YouTube (a podcast that double-posts to both):**
-> Use get_transcript on https://open.spotify.com/episode/1cXQalDxiGgptzM1nC7SCh and tell me what attribution change Meta made.
-
-You should see `source: spotify-via-youtube` and `match_confidence: 0.6` in the frontmatter.
-
-**Error path — unsupported URL:**
-> Use get_transcript on https://example.com/foo
-
-Expected: a clean `"Unsupported URL ..."` error, not a stack trace.
-
-### 4. Clean up when done
-
-```bash
-# in terminal 2, stop using the local server
-claude mcp remove transcripts-local --scope user
-
-# in terminal 1, Ctrl+C the server
-```
-
-### Optional: MCP Inspector
-
-If you want a visual UI to poke at the tool without going through Claude Code:
-
-```bash
-uv run fastmcp dev inspector src/tldl/server.py
-```
-
----
-
-## Deploying to Railway via GitHub
-
-These instructions assume you push the repo to GitHub and connect that repo to a Railway service.
-
-### 1. Push the repo to GitHub
-
-```bash
-gh repo create tldl --public --source=. --push
-```
-
-(Or use the GitHub UI — the repo can be public; secrets stay in Railway env vars, not in code.)
-
-### 2. Create the Railway service
-
-1. Open the [Railway dashboard](https://railway.com/dashboard) and click **New Project** → **Deploy from GitHub repo**.
-2. If prompted, install/authorize the Railway GitHub app on your account and grant it access to the repo.
-3. Select the repo. Railway creates the project and starts an initial build.
-4. Railway detects `Dockerfile` (and the `railway.json` reinforces this with `"builder": "DOCKERFILE"`). It will use the Dockerfile, not Railpack/nixpacks.
-
-### 3. Set environment variables
-
-Click the service tile → **Variables** tab → **RAW Editor** → paste:
-
-```env
-MCP_BEARER_TOKEN=<paste a generated token>
-WEBSHARE_PROXY_USERNAME=<your-webshare-username>
-WEBSHARE_PROXY_PASSWORD=<your-webshare-password>
-WEBSHARE_PROXY_LOCATIONS=us
-```
-
-Then click **Update Variables** → **Deploy** at the top of the canvas (Railway uses a staged-changes model; variables aren't applied until you click Deploy).
-
-Generate the bearer token locally before pasting:
-
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-`PORT` is injected automatically by Railway — do not set it.
-
-### 4. Generate a public HTTPS URL
-
-Railway does **not** auto-create a public URL. Click the service → **Settings** → **Networking** → **Public Networking** → **Generate Domain**. You'll get something like `tldl-production.up.railway.app` with a free auto-renewing SSL cert.
-
-Your MCP endpoint is now `https://<service>-production.up.railway.app/mcp`.
-
-### 5. Verify
-
-- Build/deploy logs: click the service tile → click the latest deployment → **Deploy Logs**. Wait for `Application startup complete.`
-- Healthcheck: `curl https://<your-service>.up.railway.app/healthz` → returns `ok`. Railway uses this path (configured in `railway.json`) to mark deploys healthy.
-- Auth check: `curl -X POST https://<your-service>.up.railway.app/mcp` → returns `401` with an `invalid_token` JSON body. That's correct — clients must send `Authorization: Bearer <MCP_BEARER_TOKEN>`.
-
-Push to `main` (or your default branch) auto-redeploys. Configure or change the watched branch under Service → **Settings** → **Source** → trigger branch.
-
----
-
-## Connecting from Claude
-
-> **Heads up on auth:** the Claude.ai / Claude Desktop **Custom Connectors** UI only supports OAuth — you can't paste a bearer token through it ([source](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)). For a single-user self-hosted server like this one, **Claude Code (CLI)** is the path that works. If you need claude.ai web/desktop access, you'd have to add OAuth to the server (out of scope here).
-
-### Claude Code (CLI)
-
-The simplest path. Set the token in your shell, then add the server:
-
-```bash
-export TRANSCRIPT_MCP_TOKEN='<paste your MCP_BEARER_TOKEN>'
-
-claude mcp add --scope user --transport http transcripts \
-  https://<your-service>.up.railway.app/mcp \
-  --header "Authorization: Bearer ${TRANSCRIPT_MCP_TOKEN}"
-```
-
-Flags:
-- `--scope user` makes it available across all your projects (alternatives: `--scope project` writes to `.mcp.json` in the repo for sharing; `--scope local` is project-private).
-- `--transport http` is the current Streamable HTTP transport.
-- Repeat `--header` for additional headers if needed.
-
-You can also edit the config directly. **User scope** lives in `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "transcripts": {
-      "type": "http",
-      "url": "https://<your-service>.up.railway.app/mcp",
-      "headers": {
-        "Authorization": "Bearer ${TRANSCRIPT_MCP_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-The `${VAR}` syntax reads from the shell environment at startup, so you can safely commit a `.mcp.json` (project scope) without leaking the token, as long as `TRANSCRIPT_MCP_TOKEN` is set in your shell.
-
-**Verify:**
-
-```bash
-claude mcp list           # shows registered servers + connection status
-claude mcp get transcripts
-```
-
-In a Claude Code session, `/mcp` shows the server's status and tool list.
-
-### Test prompt
-
-> "Fetch the transcript of https://www.youtube.com/watch?v=jNQXAC9IVRw and summarize the main points."
-
-Claude Code should call `get_transcript` and ground the summary in the returned markdown. If the call doesn't happen, double-check `claude mcp list` shows `transcripts` connected and that the bearer token matches `MCP_BEARER_TOKEN` on Railway. The same test prompts from the [Try it locally](#try-it-locally) section work against the deployed URL.
-
----
+The Claude.ai / Claude Desktop **Custom Connectors** UI only supports OAuth — you can't paste a bearer token through it ([source](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)). For a single-user self-hosted server like this one, **Claude Code (CLI)** is the path that works. If you need claude.ai web/desktop access, you'd have to add OAuth to the server (out of scope here).
 
 ## Environment variables
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `MCP_BEARER_TOKEN` | yes | Server refuses to start without it. Generate with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `TLDL_TRANSPORT` | no | `stdio` (default, local) or `http` (Railway). The Dockerfile sets `http`. |
+| `MCP_BEARER_TOKEN` | when http | Required when `TLDL_TRANSPORT=http`. Not needed for stdio. Generate with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
 | `WEBSHARE_PROXY_USERNAME` | for Railway | Webshare proxy username (not your account email) |
 | `WEBSHARE_PROXY_PASSWORD` | for Railway | Webshare proxy password |
 | `WEBSHARE_PROXY_LOCATIONS` | no | Comma-separated 2-letter country codes, e.g. `us,de` |
@@ -242,20 +71,21 @@ Claude Code should call `get_transcript` and ground the summary in the returned 
 .
 ├── pyproject.toml           # uv-managed deps
 ├── uv.lock
-├── Dockerfile               # uv slim base + uvicorn on $PORT
+├── Dockerfile               # uv slim base + uvicorn on $PORT (TLDL_TRANSPORT=http)
 ├── railway.json             # Dockerfile builder + /healthz healthcheck
 ├── .env.example
 ├── .gitignore
+├── CLAUDE.md                # project rules for Claude Code agents
 ├── README.md
 └── src/tldl/
     ├── __init__.py
-    ├── config.py            # env-var loader, fail-closed
+    ├── config.py            # env-var loader, transport selection, fail-closed
     ├── markdown.py          # frontmatter + paragraph coalescing
     ├── youtube.py           # video_id parse + proxy-aware transcript fetch + yt-dlp metadata
     ├── resolver.py          # shared YouTube search + rapidfuzz scoring (used by Spotify + Apple)
     ├── spotify.py           # oEmbed → resolver
     ├── apple.py             # iTunes Lookup → resolver
-    └── server.py            # FastMCP app, get_transcript tool, /healthz route
+    └── server.py            # FastMCP app, get_transcript tool, /healthz, stdio/http entrypoint
 ```
 
 ## Credits
