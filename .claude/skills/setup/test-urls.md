@@ -2,15 +2,14 @@
 
 Canonical URLs the setup skill calls `get_transcript` against in Phase 5 and Phase 8. For each, the expected fields appear in the returned markdown's YAML frontmatter.
 
-- **YouTube** — `https://www.youtube.com/watch?v=jNQXAC9IVRw`
+- **YouTube** — `https://www.youtube.com/watch?v=RaKFP_DuqpA`
   - expected `source: youtube`
-  - expected `channel: jawed`
-  - shortest reliable test (19 seconds, "Me at the zoo" — the first YouTube video ever uploaded). Use this as the smoke test; it has stable captions and won't be deleted.
+  - long-form real podcast — exercises the paragraph coalescer over a non-trivial transcript.
 
-- **Spotify → YouTube** — `https://open.spotify.com/episode/1cXQalDxiGgptzM1nC7SCh`
+- **Spotify → YouTube** — `https://open.spotify.com/episode/1cXQalDxiGgptzM1nC7SCh?si=d5148f9e6a2249a6`
   - expected `source: spotify-via-youtube`
   - expected `match_confidence` >= 0.5
-  - exercises the Spotify oEmbed → YouTube search → rapidfuzz scoring path.
+  - exercises the Spotify oEmbed → YouTube search → rapidfuzz scoring path. The `?si=` tracking param is intentionally preserved to confirm the URL parser ignores extraneous query strings.
 
 - **Apple → YouTube** — `https://podcasts.apple.com/us/podcast/the-diary-of-a-ceo-with-steven-bartlett/id1291423644?i=1000753955113`
   - expected `source: apple-via-youtube`
