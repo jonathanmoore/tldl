@@ -150,44 +150,36 @@ gh repo create tldl --public --source=. --push
 
 **Confirm with the user before running this** — the repo will be public. (Secrets stay in Railway env vars, never in git, so public is fine for this project, but the user should know.)
 
-### 7b. Railway dashboard (manual UI steps)
+### 7b. Hand over EVERYTHING the user needs in ONE message
 
-Walk the user through these steps from the README — this part can't be automated:
+**Critical:** the user is about to leave the terminal and click around in the Railway dashboard. They will not come back between clicks. If you split this into "tell me when the build starts and I'll send the token" you will leave them stranded with a half-deployed service. Generate the token now and bundle it with the dashboard steps + env block + domain step in a single message.
 
-1. https://railway.com/dashboard → **New Project** → **Deploy from GitHub repo**.
-2. Authorize the Railway GitHub app on the repo if prompted.
-3. Select the repo. Railway detects the Dockerfile and starts a build.
-4. Service tile → **Variables** tab → **RAW Editor**.
-
-### 7c. Generate a fresh bearer token
+Generate a fresh bearer token first:
 
 ```
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Save the output — you'll need it twice (Railway env, and the `claude mcp add` later).
+Then send the user one self-contained block covering all of:
 
-### 7d. Env var block
+1. **Create the project**: https://railway.com/dashboard → **New Project** → **Deploy from GitHub repo** → authorize the Railway GitHub app on the repo if prompted → select the repo. Railway detects the Dockerfile and starts a build.
+2. **Open Variables → RAW Editor** on the service tile and paste:
+   ```
+   TLDL_TRANSPORT=http
+   MCP_BEARER_TOKEN=<the token you just generated>
+   WEBSHARE_PROXY_USERNAME=<from webshare.io>
+   WEBSHARE_PROXY_PASSWORD=<from webshare.io>
+   WEBSHARE_PROXY_LOCATIONS=us
+   ```
+   Without `MCP_BEARER_TOKEN` the container exits on startup with `MCP_BEARER_TOKEN must be set when TLDL_TRANSPORT=http` and the healthcheck fails — so this must be set before the first deploy completes, not after.
+3. **Generate a public domain**: Settings → **Networking** → **Public Networking** → **Generate Domain**. The service has no inbound URL until this is clicked. Ask the user to paste the resulting domain (e.g. `tldl-production.up.railway.app`).
+4. Tell the user to save the bearer token somewhere — they'll need it again in Phase 8 for `claude mcp add`.
 
-Have the user paste this into Railway's RAW Editor:
+Notes for the user (include these in the same message):
+- `TLDL_TRANSPORT=http` is also set in the Dockerfile, so it's redundant — but explicit-is-better-than-implicit, and future-proofs against the Dockerfile changing.
+- Webshare credentials are the *proxy* username/password (not the account email). Without them YouTube blocks requests from Railway IPs. If the user doesn't have a Webshare account, point them at https://www.webshare.io — the smallest plan (~$1/GB) is fine since transcripts are tiny.
 
-```
-TLDL_TRANSPORT=http
-MCP_BEARER_TOKEN=<token from 7c>
-WEBSHARE_PROXY_USERNAME=<from webshare.io>
-WEBSHARE_PROXY_PASSWORD=<from webshare.io>
-WEBSHARE_PROXY_LOCATIONS=us
-```
-
-Note for the user: `TLDL_TRANSPORT=http` is also set in the Dockerfile, so it's redundant — but explicit-is-better-than-implicit, and it future-proofs against the Dockerfile changing. The Webshare credentials are the proxy username/password (not the account email); without them YouTube will block requests from Railway IPs.
-
-If the user doesn't have a Webshare account, point them at https://www.webshare.io — the smallest plan (~$1/GB) is fine since transcripts are tiny.
-
-### 7e. Generate domain
-
-Service → **Settings** → **Networking** → **Public Networking** → **Generate Domain**. Ask the user to paste the resulting domain (e.g. `tldl-production.up.railway.app`).
-
-### 7f. Verify deploy
+### 7c. Verify deploy
 
 ```
 curl https://<domain>/healthz
