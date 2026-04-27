@@ -1,13 +1,10 @@
 import logging
+import os
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
 
 from .apple import resolve_apple_to_youtube
-from .config import settings
 from .markdown import render_markdown
 from .resolver import ResolutionError
 from .spotify import resolve_spotify_to_youtube
@@ -18,30 +15,12 @@ from .youtube import (
 )
 
 logging.basicConfig(
-    level=settings.log_level,
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("tldl")
 
-if settings.transport == "http":
-    assert settings.bearer_token is not None  # guaranteed by config.load_settings
-    auth = StaticTokenVerifier(
-        tokens={
-            settings.bearer_token: {
-                "client_id": "owner",
-                "scopes": ["transcripts:read"],
-            }
-        },
-        required_scopes=["transcripts:read"],
-    )
-    mcp = FastMCP(name="TLDL", auth=auth)
-else:
-    mcp = FastMCP(name="TLDL")
-
-
-@mcp.custom_route("/healthz", methods=["GET"])
-async def healthz(_request: Request) -> PlainTextResponse:
-    return PlainTextResponse("ok")
+mcp = FastMCP(name="TLDL")
 
 
 def _detect(url: str) -> str:
@@ -72,8 +51,9 @@ def _friendly_error(e: Exception) -> str:
         return "Video is unavailable (private, deleted, or region-locked)."
     if isinstance(e, (IpBlocked, RequestBlocked)):
         return (
-            "YouTube blocked the request. The server's outbound IP is rate-limited; "
-            "configure WEBSHARE_PROXY_USERNAME and WEBSHARE_PROXY_PASSWORD."
+            "YouTube blocked the request. This usually means a non-residential "
+            "IP (VPN, corporate egress, or cloud/datacenter host). TLDL only "
+            "works from a residential connection."
         )
     return f"{type(e).__name__}: {e}"
 
@@ -156,24 +136,8 @@ def get_transcript(
         raise ToolError(_friendly_error(e)) from e
 
 
-# Module-scope so the Dockerfile's `uvicorn tldl.server:app` import works.
-# Constructed in stdio mode too, but never served.
-app = mcp.http_app()
-
-
 def main() -> None:
-    if settings.transport == "stdio":
-        mcp.run()
-        return
-
-    import uvicorn
-
-    uvicorn.run(
-        "tldl.server:app",
-        host="0.0.0.0",
-        port=settings.port,
-        log_level=settings.log_level.lower(),
-    )
+    mcp.run()
 
 
 if __name__ == "__main__":

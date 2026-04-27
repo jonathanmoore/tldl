@@ -1,16 +1,14 @@
 import re
-from functools import cache
 from typing import Any
 
 from youtube_transcript_api import YouTubeTranscriptApi
-from youtube_transcript_api.proxies import WebshareProxyConfig
 from yt_dlp import YoutubeDL
-
-from .config import settings
 
 _VIDEO_ID_RE = re.compile(
     r"(?:v=|/shorts/|/embed/|/live/|youtu\.be/)([0-9A-Za-z_-]{11})"
 )
+
+_YTT = YouTubeTranscriptApi()
 
 
 def extract_youtube_video_id(url: str) -> str | None:
@@ -18,24 +16,10 @@ def extract_youtube_video_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-@cache
-def _ytt() -> YouTubeTranscriptApi:
-    if settings.webshare_username and settings.webshare_password:
-        kwargs: dict[str, Any] = dict(
-            proxy_username=settings.webshare_username,
-            proxy_password=settings.webshare_password,
-            retries_when_blocked=10,
-        )
-        if settings.webshare_locations:
-            kwargs["filter_ip_locations"] = list(settings.webshare_locations)
-        return YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(**kwargs))
-    return YouTubeTranscriptApi()
-
-
 def fetch_youtube_transcript(video_id: str, language: str) -> Any:
     # api.fetch() prefers manually-created transcripts over auto-generated and
     # raises NoTranscriptFound if neither exists in the requested language.
-    return _ytt().fetch(video_id, languages=[language])
+    return _YTT.fetch(video_id, languages=[language])
 
 
 def fetch_youtube_metadata(video_id: str) -> dict[str, Any]:

@@ -10,7 +10,6 @@ dependencies = [
     "yt-dlp>=2025.1.15",
     "httpx>=0.27",
     "rapidfuzz>=3.9",
-    "uvicorn[standard]>=0.30",
 ]
 
 [build-system]
