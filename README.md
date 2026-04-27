@@ -32,26 +32,11 @@ Claude Code spawns the Python server over stdio when you start a session and shu
 
 ### Why local-only
 
-YouTube blocks transcript requests from cloud/datacenter IPs, and paid residential-proxy workarounds aren't worth their monthly cost for a single-user tool. Run TLDL on a residential connection — corporate egress, datacenter IPs, and most VPNs will also get blocked.
-
-> An HTTP transport with bearer-token auth ships in the repo for a future "run on a home server, reach over Tailscale" path, but it's not wired up by the setup flow yet.
-
-### A note on Claude clients
-
-The Claude.ai / Claude Desktop **Custom Connectors** UI only supports OAuth ([source](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)). For a local stdio MCP like this, **Claude Code (CLI)** is the supported path.
-
-## Environment variables
-
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `TLDL_TRANSPORT` | no | `stdio` (default, local) or `http` (unused today; reserved for a future home-server path). |
-| `MCP_BEARER_TOKEN` | when http | Required when `TLDL_TRANSPORT=http`. Not needed for stdio. Generate with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
-| `LOG_LEVEL` | no | Default `INFO`. Use `DEBUG` to trace requests |
-| `PORT` | no | HTTP listen port. Default 8000. Only used in http mode. |
+YouTube blocks transcript requests from cloud/datacenter IPs, and paid residential-proxy workarounds aren't worth their monthly cost for a single-user tool. Run TLDL from a residential connection — corporate egress, datacenter IPs, and most VPNs will also get blocked.
 
 ## Limitations
 
-- **Local only.** YouTube blocks cloud/datacenter IPs; residential proxies no longer reliably bypass it. Run TLDL from a residential connection.
+- **Local only.** Run TLDL from a residential connection; cloud hosting isn't supported.
 - **Platform-exclusive content** won't work — for Spotify (some Joe Rogan, Gimlet, Spotify Originals) and Apple Podcasts (Apple-exclusives) there's no YouTube version to fall back to. Error message names the best guess so you can decide.
 - **Apple Podcasts lookup window** is the most recent 200 episodes per show (iTunes Lookup limit). Older episodes return an "out of lookup window" error.
 - **Caption-disabled videos** return a clear "captions disabled" error.
@@ -64,19 +49,18 @@ The Claude.ai / Claude Desktop **Custom Connectors** UI only supports OAuth ([so
 .
 ├── pyproject.toml           # uv-managed deps
 ├── uv.lock
-├── .env.example
+├── .env.example             # LOG_LEVEL
 ├── .gitignore
 ├── CLAUDE.md                # project rules for Claude Code agents
 ├── README.md
 └── src/tldl/
     ├── __init__.py
-    ├── config.py            # env-var loader, transport selection, fail-closed
     ├── markdown.py          # frontmatter + paragraph coalescing
     ├── youtube.py           # video_id parse + transcript fetch + yt-dlp metadata
     ├── resolver.py          # shared YouTube search + rapidfuzz scoring (used by Spotify + Apple)
     ├── spotify.py           # oEmbed → resolver
     ├── apple.py             # iTunes Lookup → resolver
-    └── server.py            # FastMCP app, get_transcript tool, /healthz, stdio/http entrypoint
+    └── server.py            # FastMCP app, get_transcript tool, stdio entrypoint
 ```
 
 ## Credits
@@ -85,7 +69,7 @@ This project would not exist without:
 
 - **[youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api)** by [@jdepoix](https://github.com/jdepoix) — does the entire transcript-fetching layer.
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — YouTube metadata extraction and the `ytsearch1:` fallback used to resolve Spotify episodes to YouTube.
-- **[FastMCP](https://gofastmcp.com)** — the MCP server framework, including built-in bearer-token auth via `StaticTokenVerifier`.
+- **[FastMCP](https://gofastmcp.com)** — the MCP server framework.
 - **[rapidfuzz](https://github.com/rapidfuzz/RapidFuzz)** — fuzzy string matching for Spotify→YouTube confidence scoring.
 
 ## License

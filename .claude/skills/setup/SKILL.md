@@ -9,7 +9,7 @@ You are guiding the user through setting up TLDL — an MCP server that turns Yo
 
 Address yourself as the actor: you run commands, you verify output, you ask the user only when input is genuinely required.
 
-**Local-only is intentional.** Cloud hosting is not supported (YouTube IP blocks + the cost of residential-proxy workarounds isn't justified for a single-user tool). Only set up the stdio path; do not steer the user toward HTTP transport.
+**Local-only is intentional.** TLDL is stdio-only. There is no HTTP transport, no bearer-token auth, no cloud-hosting story.
 
 ## Phase 1 — State detection
 
@@ -26,8 +26,7 @@ Branch on what you find:
   - **If `get_transcript` IS exposed**: this is almost certainly a post-Phase-4.5 restart. Say "Welcome back — `tldl-local` is connected and the `get_transcript` tool is available. Running the self-test now." Skip directly to Phase 5.
   - **If `get_transcript` is NOT exposed**: registration happened in a prior session but tools haven't loaded. Tell the user to restart Claude Code (per Phase 4.5) and stop.
   - If the user's intent is clearly something else (e.g. they typed "uninstall tldl"), honor that — branch to the relevant phase.
-- **`tldl` is registered** → an HTTP entry exists from a prior cloud deploy. Cloud hosting no longer works. Offer to remove the broken entry and set up local stdio, unless the user says they're intentionally pointing at a server they run themselves.
-- **Both are registered** → coexistence is intentional. Ask which one the user wants to operate on.
+- **`tldl` is registered** → an HTTP entry exists from a prior cloud deploy. TLDL no longer ships an HTTP transport. Remove the dead entry (`claude mcp remove tldl --scope user`) and continue to Phase 2 for a fresh local install. If the user previously deployed to Railway (or any cloud), remind them to delete the service in their provider's dashboard so they stop being billed.
 - **Neither is registered** → fresh install. Continue to Phase 2.
 
 If `git status` shows the repo is dirty in suspicious ways (e.g. `pyproject.toml` or `src/` modified), flag it but don't block — the user may be developing.
@@ -81,7 +80,7 @@ Confirm `tldl-local` shows `✓ Connected`. If it shows failed, the most common 
 
 Tell the user, briefly:
 
-> Claude Code spawns the Python server on demand and shuts it down when the session ends. No separate terminal, no token, no port. That's stdio mode. When `TLDL_TRANSPORT` is unset the server defaults to stdio.
+> Claude Code spawns the Python server on demand and shuts it down when the session ends. No separate terminal, no token, no port — TLDL only runs over stdio.
 
 ### Phase 4.5 — STOP and restart Claude Code
 
@@ -142,4 +141,4 @@ Mention undo:
 
 - **Uninstall local**: `claude mcp remove tldl-local --scope user`.
 
-If the user asks about remote access: cloud hosting isn't supported (YouTube IP blocks), and there's a future plan to support running TLDL on a home server reached over Tailscale, but it isn't built. For now, TLDL runs on the same machine as Claude Code.
+If the user asks about remote access: not supported. TLDL is stdio-only and runs on the same machine as Claude Code.

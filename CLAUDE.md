@@ -1,13 +1,13 @@
 # TLDL — Project Rules for Claude
 
 ## What this is
-A FastMCP server that turns YouTube, Spotify, and Apple Podcasts URLs into markdown transcripts using the platforms' own captions. **Local-only**: stdio is the supported and documented transport. HTTP transport plumbing is retained for a future Tailscale-based path but is not currently set up by the onboarding flow.
+A FastMCP server that turns YouTube, Spotify, and Apple Podcasts URLs into markdown transcripts using the platforms' own captions. **Local-only, stdio-only.** Claude Code spawns the process; the process boundary is the trust boundary.
 
 ## Architecture invariants
-- Two transport modes are selected by `TLDL_TRANSPORT`: `stdio` (default, local, no auth, spawned by Claude Code) and `http` (uvicorn + bearer-token, intended for future LAN/Tailscale exposure). `mcp.http_app()` is exposed at module scope as `app` so the http path stays importable.
-- Bearer token is required ONLY when transport is http. stdio uses the process boundary as the trust boundary.
+- Single transport: stdio. `server.py` exposes `mcp = FastMCP(...)` and `main()` calls `mcp.run()`. There is no HTTP server, no bearer-token auth, no `/healthz`.
 - **No cloud hosting.** YouTube blocks transcript requests from cloud/datacenter IPs, and Webshare-style residential-proxy services have stopped reliably bypassing it. Do not add a Dockerfile, deploy config, or proxy code path back. If a future cloud workaround appears, discuss before re-adding.
 - TLDL must be run from a residential connection. The `IpBlocked` / `RequestBlocked` friendly error tells the user this — do not rewrite it to suggest a proxy.
+- If HTTP transport is ever needed again (e.g. for a Tailscale-exposed home-server path), the prior implementation can be recovered from git history before this commit: `mcp.http_app()` served by uvicorn, bearer-token auth via FastMCP's `StaticTokenVerifier`, with a `/healthz` route. Do not rebuild it speculatively — only add it back when there's a concrete user need.
 
 ## Setup skill is the source of truth for onboarding
 The user-facing onboarding flow lives in `.claude/skills/setup/SKILL.md`. The README is intentionally minimal and points users to the skill.
@@ -15,9 +15,8 @@ The user-facing onboarding flow lives in `.claude/skills/setup/SKILL.md`. The RE
 **When you change any of these files, you MUST re-read `.claude/skills/setup/SKILL.md` and update it if anything in your change makes the skill's instructions wrong:**
 - `pyproject.toml` (deps, Python version)
 - `.env.example` (env vars)
-- `src/tldl/config.py` (env var loading, what's required when)
-- `src/tldl/server.py` (transport selection, the `get_transcript` tool signature, auth)
-- The "Environment variables" or "Limitations" sections of `README.md`
+- `src/tldl/server.py` (the `get_transcript` tool signature, MCP setup)
+- The "Limitations" section of `README.md`
 
 **When you add a new platform handler (e.g., a new podcast service):**
 1. Add a representative URL + expected frontmatter snippet to `.claude/skills/setup/test-urls.md`
@@ -33,6 +32,5 @@ The user-facing onboarding flow lives in `.claude/skills/setup/SKILL.md`. The RE
 
 ## Don't
 - Don't commit secrets. `.env` is gitignored; `.env.example` is the template.
-- Don't add OAuth or session auth — bearer-token-only is intentional for the single-user self-hosted model.
-- Don't add new transports beyond stdio and http without discussion.
-- Don't re-introduce Webshare or any other proxy integration. Cloud hosting is not on the roadmap; the future remote-access story is Tailscale, not proxies.
+- Don't add new transports beyond stdio without discussion.
+- Don't re-introduce Webshare or any other proxy integration. Cloud hosting is not on the roadmap; if remote access is wanted, the path is "run TLDL on a home server, reach over Tailscale" — not proxies.
